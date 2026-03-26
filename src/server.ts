@@ -6,6 +6,8 @@ import { AnvilDatabase } from './db.js';
 import { Embedder } from './embedder.js';
 import { Indexer } from './indexer.js';
 import { FileWatcher } from './watcher.js';
+import { QueryEngine } from './query.js';
+import { registerSearchDocs } from './tools/search-docs.js';
 
 export interface AnvilServerOptions {
   docsRoot: string;
@@ -19,6 +21,7 @@ export class AnvilServer {
   private indexer!: Indexer;
   private watcher: FileWatcher | null = null;
   private mcpServer!: Server;
+  private queryEngine!: QueryEngine;
   private stopped = false;
 
   constructor(private options: AnvilServerOptions) {}
@@ -87,17 +90,23 @@ export class AnvilServer {
       await this.watcher.start();
     }
 
-    // 7. Create MCP server
+    // 7. Create query engine
+    this.queryEngine = new QueryEngine(this.db, this.embedder);
+
+    // 8. Create MCP server
     this.mcpServer = new Server(
       { name: 'anvil', version: '0.1.0' },
       { capabilities: { tools: {} } },
     );
 
-    // 8. Connect stdio transport
+    // 9. Register tools
+    registerSearchDocs(this.mcpServer, this.queryEngine, () => this.checkStaleness());
+
+    // 10. Connect stdio transport
     const transport = new StdioServerTransport();
     await this.mcpServer.connect(transport);
 
-    process.stderr.write(`[anvil] MCP server ready (0 tools registered)\n`);
+    process.stderr.write(`[anvil] MCP server ready (1 tool registered)\n`);
   }
 
   async checkStaleness(): Promise<void> {
@@ -138,6 +147,10 @@ export class AnvilServer {
   // Expose for testing
   getDatabase(): AnvilDatabase {
     return this.db;
+  }
+
+  getQueryEngine(): QueryEngine {
+    return this.queryEngine;
   }
 
   private async scanMarkdownFiles(dir: string, base?: string): Promise<string[]> {

@@ -114,6 +114,27 @@ export class AnvilDatabase {
     this.db.prepare('INSERT OR REPLACE INTO anvil_meta (key, value) VALUES (?, ?)').run(key, value);
   }
 
+  vectorSearch(embedding: Buffer, limit: number): Array<Chunk & { distance: number }> {
+    const rows = this.db.prepare(`
+      SELECT c.chunk_id, c.file_path, c.heading_path, c.heading_level, c.content, c.content_hash, c.last_modified, c.char_count, c.ordinal, v.distance
+      FROM chunks_vss v
+      INNER JOIN chunks c ON c.id = v.rowid
+      WHERE vss_search(v.embedding, vss_search_params(?, ?))
+    `).all(embedding, limit) as Array<Chunk & { distance: number }>;
+    return rows;
+  }
+
+  getDistinctFiles(): string[] {
+    const rows = this.db.prepare('SELECT DISTINCT file_path FROM chunks ORDER BY file_path').all() as Array<{ file_path: string }>;
+    return rows.map(r => r.file_path);
+  }
+
+  getChunksByHeadingPrefix(filePath: string, headingPrefix: string): Chunk[] {
+    return this.db.prepare(
+      'SELECT chunk_id, file_path, heading_path, heading_level, content, content_hash, last_modified, char_count, ordinal FROM chunks WHERE file_path = ? AND (heading_path = ? OR heading_path LIKE ?) ORDER BY ordinal'
+    ).all(filePath, headingPrefix, `${headingPrefix} [part %`) as Chunk[];
+  }
+
   close(): void {
     this.db.close();
   }
