@@ -7,7 +7,7 @@ import { Embedder } from './embedder.js';
 import { Indexer } from './indexer.js';
 import { FileWatcher } from './watcher.js';
 import { QueryEngine } from './query.js';
-import { registerSearchDocs } from './tools/search-docs.js';
+import { registerAllTools } from './tools/index.js';
 
 export interface AnvilServerOptions {
   docsRoot: string;
@@ -100,13 +100,19 @@ export class AnvilServer {
     );
 
     // 9. Register tools
-    registerSearchDocs(this.mcpServer, this.queryEngine, () => this.checkStaleness());
+    registerAllTools(this.mcpServer, this.queryEngine, () => this.checkStaleness(), {
+      docsRoot: this.options.docsRoot,
+      dbPath: dbPath,
+      db: this.db,
+      startTime: Date.now(),
+      version: '0.1.0',
+    });
 
     // 10. Connect stdio transport
     const transport = new StdioServerTransport();
     await this.mcpServer.connect(transport);
 
-    process.stderr.write(`[anvil] MCP server ready (1 tool registered)\n`);
+    process.stderr.write(`[anvil] MCP server ready (5 tools registered)\n`);
   }
 
   async checkStaleness(): Promise<void> {
