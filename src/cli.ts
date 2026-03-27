@@ -127,7 +127,19 @@ async function runServe(opts: Record<string, unknown>, cmd: Command): Promise<vo
   const docsRoot = resolve(config.docs);
 
   if (!existsSync(docsRoot)) {
-    process.stderr.write(`Error: docs directory not found: ${docsRoot}\n`);
+    // Check for common typos
+    const suggestions: string[] = [];
+    const common = ['docs', 'doc', 'documentation', 'content', 'pages'];
+    for (const name of common) {
+      if (existsSync(resolve(name)) && resolve(name) !== docsRoot) {
+        suggestions.push(name);
+      }
+    }
+    let hint = `  Check the --docs flag or anvil.config.json.`;
+    if (suggestions.length > 0) {
+      hint = `  Did you mean ./${suggestions[0]}/?\n` + hint;
+    }
+    process.stderr.write(`✗ Docs directory not found: ${docsRoot}\n${hint}\n`);
     process.exit(1);
   }
 

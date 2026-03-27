@@ -10,10 +10,24 @@ export class Embedder {
 
   async init(): Promise<void> {
     process.stderr.write(`[anvil] Loading embedding model: ${this.modelName}\n`);
-    const { pipeline } = await import('@huggingface/transformers');
-    this.pipe = await (pipeline as any)('feature-extraction', this.modelName, {
-      dtype: 'fp32',
-    });
+    try {
+      const { pipeline } = await import('@huggingface/transformers');
+      this.pipe = await (pipeline as any)('feature-extraction', this.modelName, {
+        dtype: 'fp32',
+      });
+    } catch (err) {
+      const msg = (err as Error).message ?? String(err);
+      throw new Error(
+        `✗ Failed to load embedding model: ${this.modelName}\n` +
+        `  ${msg}\n\n` +
+        `  The model is downloaded automatically on first run (~80 MB).\n` +
+        `  Common causes:\n` +
+        `  • No internet connection or firewall blocking huggingface.co\n` +
+        `  • Disk full — model is cached in ~/.cache/huggingface/\n` +
+        `  • Invalid model name — check your config\n\n` +
+        `  To retry, ensure you have internet access and run anvil again.`
+      );
+    }
     process.stderr.write(`[anvil] Model loaded.\n`);
   }
 

@@ -262,14 +262,27 @@ export function resolveConfig(cliFlags: CLIFlags, cliExplicit: Set<string>): Res
   const { config: rawConfig, errors: loadErrors } = loadConfigFile(configPath);
 
   if (loadErrors.length > 0) {
-    throw new Error(`Config file ${configPath}:\n${loadErrors.join('\n')}`);
+    throw new Error(
+      `✗ Could not load config file: ${configPath}\n` +
+      loadErrors.map(e => `  ${e}`).join('\n') + '\n' +
+      `  Check that the file contains valid JSON.`
+    );
   }
 
   const validation = validateConfig(rawConfig);
-  warnings.push(...validation.warnings);
+
+  if (validation.warnings.length > 0) {
+    warnings.push(
+      `⚠ Config file has unknown keys (ignored): ${validation.warnings.map(w => w.replace(/^Unknown config key "([^"]+)".*/, '$1')).join(', ')}\n` +
+      `  This may be a typo or a setting from a newer version of Anvil.`
+    );
+  }
 
   if (validation.errors.length > 0) {
-    throw new Error(`Invalid config file ${configPath}:\n${validation.errors.join('\n')}`);
+    throw new Error(
+      `✗ Config file has invalid values:\n` +
+      validation.errors.map(e => `  • ${e}`).join('\n')
+    );
   }
 
   return {
