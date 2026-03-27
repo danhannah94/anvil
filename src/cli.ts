@@ -6,6 +6,7 @@ import { Command } from 'commander';
 import { AnvilServer } from './server.js';
 import { runIndex } from './commands/index.js';
 import { setLogLevel, type LogLevel } from './logger.js';
+import { resolveConfig, type CLIFlags } from './config.js';
 
 function loadVersion(): string {
   try {
