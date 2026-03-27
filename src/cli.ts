@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { Command } from 'commander';
 import { AnvilServer } from './server.js';
 import { runIndex } from './commands/index.js';
+import { runInit } from './commands/init.js';
 import { setLogLevel, type LogLevel } from './logger.js';
 import { resolveConfig, type CLIFlags } from './config.js';
 
@@ -51,13 +52,17 @@ export function createProgram(): Command {
     await runServe(opts, cmd);
   });
 
-  // init subcommand (stub)
+  // init subcommand
   const init = new Command('init')
     .description('Create anvil.config.json interactively')
     .option('--yes', 'Skip prompts, use all defaults')
-    .action(() => {
-      process.stderr.write('anvil init is not yet implemented (coming in S3)\n');
-      process.exit(0);
+    .action(async (opts: { yes?: boolean }) => {
+      try {
+        await runInit({ yes: opts.yes });
+      } catch (err) {
+        process.stderr.write(`Error: ${(err as Error).message}\n`);
+        process.exit(1);
+      }
     });
 
   // index subcommand (stub)
