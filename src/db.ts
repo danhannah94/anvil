@@ -2,6 +2,7 @@ import BetterSqlite3 from 'better-sqlite3';
 import * as sqliteVss from 'sqlite-vss';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { arch, platform } from 'node:os';
 import type { Chunk } from './types.js';
 
 export class AnvilDatabase {
@@ -9,9 +10,40 @@ export class AnvilDatabase {
 
   constructor(dbPath: string) {
     mkdirSync(dirname(dbPath), { recursive: true });
-    this.db = new BetterSqlite3(dbPath);
+
+    try {
+      this.db = new BetterSqlite3(dbPath);
+    } catch (err) {
+      const msg = (err as Error).message ?? String(err);
+      throw new Error(
+        `✗ Failed to open database: ${dbPath}\n` +
+        `  ${msg}\n` +
+        `  Check that the directory is writable and the file is not locked by another process.`
+      );
+    }
+
     this.db.pragma('journal_mode = WAL');
-    sqliteVss.load(this.db);
+
+    try {
+      sqliteVss.load(this.db);
+    } catch (err) {
+      const msg = (err as Error).message ?? String(err);
+      const plat = platform();
+      const cpuArch = arch();
+      let platformHint = `  Platform: ${plat} ${cpuArch}`;
+      if (plat === 'darwin' && cpuArch === 'arm64') {
+        platformHint += ' (Apple Silicon)';
+      }
+      throw new Error(
+        `✗ Failed to load sqlite-vss extension\n` +
+        `  ${msg}\n\n` +
+        `  This is a native module that needs to be compiled for your platform.\n` +
+        `  Try: npm rebuild better-sqlite3\n` +
+        platformHint + '\n' +
+        `  More info: https://github.com/nicolo-ribaudo/sqlite-vss-node#troubleshooting`
+      );
+    }
+
     this.init();
   }
 

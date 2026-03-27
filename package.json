@@ -1,16 +1,42 @@
 {
   "name": "@claymore-dev/anvil",
   "version": "0.1.0",
+  "description": "MCP server that makes your project docs searchable by AI — chunks, embeds, and serves markdown over the Model Context Protocol.",
   "type": "module",
   "license": "MIT",
+  "author": "Dan Hannah",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/danhannah94/anvil"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "documentation",
+    "semantic-search",
+    "embeddings",
+    "sqlite",
+    "vector-search",
+    "markdown",
+    "ai",
+    "cursor",
+    "claude"
+  ],
   "bin": {
     "anvil": "./dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

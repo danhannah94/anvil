@@ -30,9 +30,13 @@ export class AnvilServer {
     // 1. Validate docsRoot
     try {
       const s = await stat(this.options.docsRoot);
-      if (!s.isDirectory()) throw new Error('not a directory');
-    } catch {
-      throw new Error(`docs directory not found: ${this.options.docsRoot}`);
+      if (!s.isDirectory()) throw new Error('path exists but is not a directory');
+    } catch (err) {
+      throw new Error(
+        `✗ Docs directory not found: ${this.options.docsRoot}\n` +
+        `  Anvil needs a directory of markdown files to index.\n` +
+        `  Check the --docs flag or anvil.config.json.`
+      );
     }
 
     // 2. Create DB

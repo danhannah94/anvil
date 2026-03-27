@@ -29,7 +29,10 @@ export async function runIndex(opts: IndexCommandOptions): Promise<void> {
   const docsRoot = resolve(opts.docs);
 
   if (!existsSync(docsRoot)) {
-    logger.error(`Error: docs directory not found: ${docsRoot}\n`);
+    logger.error(
+      `✗ Docs directory not found: ${docsRoot}\n` +
+      `  Check the --docs flag or anvil.config.json.\n`
+    );
     process.exit(1);
   }
 
