@@ -7,8 +7,10 @@ import type { Chunk } from './types.js';
 
 export class AnvilDatabase {
   private db: BetterSqlite3.Database;
+  private dimensions: number;
 
-  constructor(dbPath: string) {
+  constructor(dbPath: string, dimensions: number = 384) {
+    this.dimensions = dimensions;
     mkdirSync(dirname(dbPath), { recursive: true });
 
     try {
@@ -48,6 +50,7 @@ export class AnvilDatabase {
   }
 
   private init(): void {
+    // 1. Create chunks + anvil_meta first (so getMeta/setMeta work)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS chunks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,11 +69,37 @@ export class AnvilDatabase {
         key TEXT PRIMARY KEY,
         value TEXT
       );
+    `);
 
+    // 2. Check dimension mismatch
+    const stored = this.getMeta("embedding_dimensions");
+    if (stored && Number(stored) !== this.dimensions) {
+      process.stderr.write(`[anvil] Embedding dimensions changed (${stored} → ${this.dimensions}). Rebuilding vector index.\n`);
+      this.db.exec("DROP TABLE IF EXISTS chunks_vss");
+      this.setMeta("needs_reembed", "true");
+    }
+
+    // 3. Create/recreate chunks_vss with current dimensions
+    this.db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS chunks_vss USING vss0(
-        embedding(384)
+        embedding(${this.dimensions})
       );
     `);
+
+    // 4. Store current dimensions
+    this.setMeta("embedding_dimensions", String(this.dimensions));
+  }
+
+  needsReembed(): boolean {
+    return this.getMeta("needs_reembed") === "true";
+  }
+
+  clearReembedFlag(): void {
+    this.setMeta("needs_reembed", "false");
+  }
+
+  getDimensions(): number {
+    return this.dimensions;
   }
 
   upsertChunk(chunk: Chunk, embedding: Float32Array): void {
