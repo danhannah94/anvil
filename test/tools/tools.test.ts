@@ -2,50 +2,36 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { AnvilDatabase } from '../../src/db.js';
-import { Embedder } from '../../src/embedder.js';
-import { Indexer } from '../../src/indexer.js';
-import { QueryEngine } from '../../src/query.js';
+import { createAnvil, type Anvil } from '../../src/anvil.js';
 import { registerAllTools } from '../../src/tools/index.js';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 let tmpDir: string;
-let db: AnvilDatabase;
-let embedder: Embedder;
+let anvil: Anvil;
 let client: Client;
 let server: Server;
 
 beforeAll(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'anvil-tools-test-'));
   const dbPath = join(tmpDir, 'test.db');
-  db = new AnvilDatabase(dbPath);
-  embedder = new Embedder();
-  await embedder.init();
-
-  const indexer = new Indexer(db, embedder);
   const docsDir = join(tmpDir, 'docs');
   mkdirSync(join(docsDir, 'epics'), { recursive: true });
 
   writeFileSync(join(docsDir, 'guide.md'), `# Setup Guide\n\nHow to install and configure the system.\n\n## Installation\n\nRun npm install.\n`);
   writeFileSync(join(docsDir, 'epics', 'e1.md'), `# Epic 1\n\nUser authentication feature.\n`);
 
-  const fs = require('node:fs');
-  await indexer.indexFile('guide.md', fs.readFileSync(join(docsDir, 'guide.md'), 'utf-8'), '2026-01-01T00:00:00Z');
-  await indexer.indexFile('epics/e1.md', fs.readFileSync(join(docsDir, 'epics', 'e1.md'), 'utf-8'), '2026-01-01T00:00:00Z');
-
-  const qe = new QueryEngine(db, embedder);
+  anvil = await createAnvil({ docsPath: docsDir, dbPath });
+  await anvil.index();
 
   server = new Server(
     { name: 'anvil-test', version: '0.1.0' },
     { capabilities: { tools: {} } },
   );
 
-  registerAllTools(server, qe, async () => {}, {
-    docsRoot: docsDir,
-    dbPath,
-    db,
+  registerAllTools(server, async () => {}, {
+    anvil,
     startTime: Date.now(),
     version: '0.1.0',
   });
@@ -59,7 +45,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await client.close();
   await server.close();
-  db.close();
+  await anvil.close();
   rmSync(tmpDir, { recursive: true, force: true });
 });
 

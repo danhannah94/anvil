@@ -5,10 +5,7 @@
 
 import { resolve, join } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
-import { readdir, readFile, stat } from 'node:fs/promises';
-import { AnvilDatabase } from '../db.js';
-import { LocalEmbedder } from '../embedder.js';
-import { Indexer } from '../indexer.js';
+import { createAnvil, scanMarkdownFiles } from '../anvil.js';
 import { logger, formatBytes, formatDuration, setLogLevel, type LogLevel } from '../logger.js';
 
 export interface IndexCommandOptions {
@@ -40,7 +37,7 @@ export async function runIndex(opts: IndexCommandOptions): Promise<void> {
 
   logger.info(`\n🔨 Indexing ${opts.docs}\n`);
 
-  // Scan markdown files
+  // Scan for files first (to handle empty directory without creating embedder)
   const mdFiles = await scanMarkdownFiles(docsRoot);
   logger.info(`  Found ${mdFiles.length} markdown files\n`);
 
@@ -49,55 +46,15 @@ export async function runIndex(opts: IndexCommandOptions): Promise<void> {
     return;
   }
 
-  // Init DB and embedder
-  const db = new AnvilDatabase(dbPath);
-  const embedder = new LocalEmbedder();
-  await embedder.init();
-  const indexer = new Indexer(db, embedder);
+  // Create Anvil and index
+  const anvil = await createAnvil({ docsPath: docsRoot, dbPath });
+  const result = await anvil.index({ force: opts.force });
 
-  // If --force, clear all existing chunks first
-  if (opts.force) {
-    logger.info(`  Force mode: clearing existing index\n`);
-    const existingFiles = db.getDistinctFiles();
-    for (const f of existingFiles) {
-      db.deleteFileChunks(f);
-    }
-  }
-
-  // Index all files
-  let totalChunks = 0;
-  let totalAdded = 0;
-  let totalUpdated = 0;
-  let totalUnchanged = 0;
-
-  const startTime = Date.now();
-
-  for (let i = 0; i < mdFiles.length; i++) {
-    const rel = mdFiles[i];
-    const absPath = join(docsRoot, rel);
-    const content = await readFile(absPath, 'utf-8');
-    const fileStat = await stat(absPath);
-    const result = await indexer.indexFile(rel, content, fileStat.mtime.toISOString());
-    totalAdded += result.added;
-    totalUpdated += result.updated;
-    totalUnchanged += result.unchanged;
-    totalChunks += result.added + result.updated + result.unchanged;
-  }
-
-  // Prune deleted files
-  const allChunks = db.getAllChunks();
-  const dbFiles = new Set(allChunks.map((c) => c.file_path));
-  const diskFiles = new Set(mdFiles);
-  for (const dbFile of dbFiles) {
-    if (!diskFiles.has(dbFile)) {
-      indexer.removeFile(dbFile);
-    }
-  }
-
-  const elapsed = Date.now() - startTime;
-
+  const totalChunks = result.chunks_added + result.chunks_updated + result.chunks_unchanged;
   logger.info(`  Chunked into ${totalChunks} sections\n`);
-  logger.info(`  Generating embeddings... done (${formatDuration(elapsed)})\n`);
+  logger.info(`  Generating embeddings... done (${formatDuration(result.duration_ms)})\n`);
+
+  await anvil.close();
 
   // DB file size
   try {
@@ -108,21 +65,4 @@ export async function runIndex(opts: IndexCommandOptions): Promise<void> {
   }
 
   logger.info(`\n✅ Index complete: ${mdFiles.length} pages, ${totalChunks} chunks\n`);
-
-  db.close();
-}
-
-async function scanMarkdownFiles(dir: string, base?: string): Promise<string[]> {
-  const result: string[] = [];
-  const entries = await readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const rel = base ? join(base, entry.name) : entry.name;
-    if (entry.isDirectory()) {
-      if (entry.name === '.anvil' || entry.name === 'node_modules') continue;
-      result.push(...(await scanMarkdownFiles(join(dir, entry.name), rel)));
-    } else if (entry.name.endsWith('.md')) {
-      result.push(rel);
-    }
-  }
-  return result;
 }
