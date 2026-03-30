@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { AnvilDatabase } from './db.js';
-import { Embedder } from './embedder.js';
+import { type EmbeddingProvider, LocalEmbedder } from './embedder.js';
 import { Indexer } from './indexer.js';
 import { FileWatcher } from './watcher.js';
 import { QueryEngine } from './query.js';
@@ -17,7 +17,7 @@ export interface AnvilServerOptions {
 
 export class AnvilServer {
   private db!: AnvilDatabase;
-  private embedder!: Embedder;
+  private embedder!: EmbeddingProvider;
   private indexer!: Indexer;
   private watcher: FileWatcher | null = null;
   private mcpServer!: Server;
@@ -44,7 +44,7 @@ export class AnvilServer {
     this.db = new AnvilDatabase(dbPath);
 
     // 3. Init embedder
-    this.embedder = new Embedder();
+    this.embedder = new LocalEmbedder();
     await this.embedder.init();
 
     // 4. Create indexer

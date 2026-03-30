@@ -1,5 +1,5 @@
 import { AnvilDatabase } from './db.js';
-import { Embedder } from './embedder.js';
+import type { EmbeddingProvider } from './embedder.js';
 import type { Chunk } from './types.js';
 import { basename } from 'node:path';
 
@@ -52,12 +52,12 @@ export interface PageSummary {
 export class QueryEngine {
   constructor(
     private db: AnvilDatabase,
-    private embedder: Embedder
+    private embedder: EmbeddingProvider
   ) {}
 
   async vectorSearch(query: string, topK: number = 5, fileFilter?: string): Promise<{ results: SearchResult[]; total_chunks: number; query_ms: number }> {
     const start = Date.now();
-    const queryEmbedding = await this.embedder.embedQuery(query);
+    const queryEmbedding = await this.embedder.embed(query);
     const embeddingBuffer = Buffer.from(queryEmbedding.buffer, queryEmbedding.byteOffset, queryEmbedding.byteLength);
 
     // If filtering, fetch more to account for post-filter reduction

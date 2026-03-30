@@ -7,7 +7,7 @@ import { resolve, join } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { AnvilDatabase } from '../db.js';
-import { Embedder } from '../embedder.js';
+import { LocalEmbedder } from '../embedder.js';
 import { Indexer } from '../indexer.js';
 import { logger, formatBytes, formatDuration, setLogLevel, type LogLevel } from '../logger.js';
 
@@ -51,7 +51,7 @@ export async function runIndex(opts: IndexCommandOptions): Promise<void> {
 
   // Init DB and embedder
   const db = new AnvilDatabase(dbPath);
-  const embedder = new Embedder();
+  const embedder = new LocalEmbedder();
   await embedder.init();
   const indexer = new Indexer(db, embedder);
 
