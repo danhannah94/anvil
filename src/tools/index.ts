@@ -1,14 +1,11 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { QueryEngine } from '../query.js';
-import { AnvilDatabase } from '../db.js';
+import type { Anvil } from '../anvil.js';
 import { execSync } from 'node:child_process';
 import { statSync } from 'node:fs';
 
 export interface ServerContext {
-  docsRoot: string;
-  dbPath: string;
-  db: AnvilDatabase;
+  anvil: Anvil;
   startTime: number;
   version: string;
 }
@@ -77,8 +74,19 @@ function jsonResponse(data: unknown, isError = false) {
   };
 }
 
+function matchGlob(filePath: string, pattern: string): boolean {
+  if (pattern === '*' || pattern === '**') return true;
+  if (!pattern.includes('*')) return filePath.startsWith(pattern);
+  const regexStr = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '{{GLOBSTAR}}')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\{\{GLOBSTAR\}\}/g, '.*');
+  return new RegExp(`^${regexStr}`).test(filePath);
+}
+
 async function handleSearchDocs(
-  queryEngine: QueryEngine,
+  anvil: Anvil,
   checkStaleness: () => Promise<void>,
   params: Record<string, unknown>,
 ) {
@@ -90,8 +98,12 @@ async function handleSearchDocs(
   topK = Math.max(1, Math.min(20, topK));
   const fileFilter = typeof params.file_filter === 'string' ? params.file_filter : undefined;
   await checkStaleness();
-  const result = await queryEngine.vectorSearch(query, topK, fileFilter);
-  return jsonResponse(result);
+  let results = await anvil.search(query, fileFilter ? topK * 4 : topK);
+  if (fileFilter) {
+    results = results.filter(r => matchGlob(r.metadata.file_path, fileFilter));
+    results = results.slice(0, topK);
+  }
+  return jsonResponse({ results });
 }
 
 function normalizePath(p: string): string {
@@ -99,7 +111,7 @@ function normalizePath(p: string): string {
 }
 
 async function handleGetPage(
-  queryEngine: QueryEngine,
+  anvil: Anvil,
   checkStaleness: () => Promise<void>,
   params: Record<string, unknown>,
 ) {
@@ -109,7 +121,7 @@ async function handleGetPage(
   }
   const normalized = normalizePath(filePath);
   await checkStaleness();
-  const result = queryEngine.getPageChunks(normalized);
+  const result = await anvil.getPage(normalized);
   if (!result) {
     return jsonResponse({ error: `No page found at path: ${normalized}. Use list_pages to discover available pages.` }, true);
   }
@@ -117,7 +129,7 @@ async function handleGetPage(
 }
 
 async function handleGetSection(
-  queryEngine: QueryEngine,
+  anvil: Anvil,
   checkStaleness: () => Promise<void>,
   params: Record<string, unknown>,
 ) {
@@ -131,7 +143,7 @@ async function handleGetSection(
   }
   const normalized = normalizePath(filePath);
   await checkStaleness();
-  const result = queryEngine.getSectionChunks(normalized, headingPath);
+  const result = await anvil.getSection(normalized, headingPath);
   if (!result) {
     return jsonResponse({ error: `No section found at heading: ${headingPath} in ${normalized}. Use get_page to see available sections.` }, true);
   }
@@ -139,7 +151,7 @@ async function handleGetSection(
 }
 
 async function handleListPages(
-  queryEngine: QueryEngine,
+  anvil: Anvil,
   checkStaleness: () => Promise<void>,
   params: Record<string, unknown>,
 ) {
@@ -150,33 +162,29 @@ async function handleListPages(
     if (prefix) prefix = prefix + '/';
   }
   await checkStaleness();
-  const result = queryEngine.listPages(prefix);
+  const result = await anvil.listPages(prefix);
   return jsonResponse(result);
 }
 
-function handleGetStatus(
-  queryEngine: QueryEngine,
+async function handleGetStatus(
+  anvil: Anvil,
   ctx: ServerContext,
 ) {
-  const pagesResult = queryEngine.listPages();
-  const totalChunks = ctx.db.getAllChunks().length;
-  const lastIndexed = ctx.db.getMeta('last_index_timestamp') ?? null;
-  const embeddingModel = ctx.db.getMeta('embedding_model') ?? null;
-  const embeddingDimensions = ctx.db.getMeta('embedding_dimensions') ?? null;
+  const status = await anvil.getStatus();
 
   let dbSizeBytes = 0;
   try {
-    dbSizeBytes = statSync(ctx.dbPath).size;
+    dbSizeBytes = statSync(status.db_path).size;
   } catch { /* ignore */ }
 
   let git: { head_commit: string; origin_main: string | null; dirty: boolean } | null = null;
   try {
-    const head = execSync('git rev-parse --short HEAD', { cwd: ctx.docsRoot, encoding: 'utf-8' }).trim();
+    const head = execSync('git rev-parse --short HEAD', { cwd: status.docs_path, encoding: 'utf-8' }).trim();
     let originMain: string | null = null;
     try {
-      originMain = execSync('git rev-parse --short origin/main', { cwd: ctx.docsRoot, encoding: 'utf-8' }).trim();
+      originMain = execSync('git rev-parse --short origin/main', { cwd: status.docs_path, encoding: 'utf-8' }).trim();
     } catch { /* no remote */ }
-    const porcelain = execSync('git status --porcelain -- .', { cwd: ctx.docsRoot, encoding: 'utf-8' }).trim();
+    const porcelain = execSync('git status --porcelain -- .', { cwd: status.docs_path, encoding: 'utf-8' }).trim();
     git = { head_commit: head, origin_main: originMain, dirty: porcelain.length > 0 };
   } catch { /* not a git repo */ }
 
@@ -184,19 +192,19 @@ function handleGetStatus(
     server: {
       version: ctx.version,
       uptime_seconds: Math.floor((Date.now() - ctx.startTime) / 1000),
-      docs_root: ctx.docsRoot,
+      docs_root: status.docs_path,
     },
     index: {
-      total_pages: pagesResult.total_pages,
-      total_chunks: totalChunks,
-      last_indexed: lastIndexed,
-      db_path: ctx.dbPath,
+      total_pages: status.total_pages,
+      total_chunks: status.total_chunks,
+      last_indexed: status.last_indexed,
+      db_path: status.db_path,
       db_size_bytes: dbSizeBytes,
     },
     embedding: {
-      model: embeddingModel,
-      dimensions: embeddingDimensions ? Number(embeddingDimensions) : null,
-      provider: 'local',
+      model: status.embedding.model,
+      dimensions: status.embedding.dimensions,
+      provider: status.embedding.provider,
     },
     git,
   });
@@ -204,9 +212,8 @@ function handleGetStatus(
 
 export function registerAllTools(
   server: Server,
-  queryEngine: QueryEngine,
   checkStaleness: () => Promise<void>,
-  serverContext: ServerContext,
+  ctx: ServerContext,
 ): void {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: toolDefinitions,
@@ -219,15 +226,15 @@ export function registerAllTools(
     try {
       switch (name) {
         case 'search_docs':
-          return await handleSearchDocs(queryEngine, checkStaleness, params);
+          return await handleSearchDocs(ctx.anvil, checkStaleness, params);
         case 'get_page':
-          return await handleGetPage(queryEngine, checkStaleness, params);
+          return await handleGetPage(ctx.anvil, checkStaleness, params);
         case 'get_section':
-          return await handleGetSection(queryEngine, checkStaleness, params);
+          return await handleGetSection(ctx.anvil, checkStaleness, params);
         case 'list_pages':
-          return await handleListPages(queryEngine, checkStaleness, params);
+          return await handleListPages(ctx.anvil, checkStaleness, params);
         case 'get_status':
-          return handleGetStatus(queryEngine, serverContext);
+          return await handleGetStatus(ctx.anvil, ctx);
         default:
           return jsonResponse({ error: `Unknown tool: ${name}` }, true);
       }
