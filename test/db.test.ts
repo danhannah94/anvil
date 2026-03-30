@@ -131,4 +131,69 @@ describe('AnvilDatabase', () => {
     // Verify chunk exists - if vss insert failed, the transaction would have rolled back
     expect(db.getAllChunks()).toHaveLength(1);
   });
+
+  it('constructor accepts custom dimensions', () => {
+    const customDb = new AnvilDatabase(join(tmpDir, 'custom-dim.db'), 1536);
+    expect(customDb.getDimensions()).toBe(1536);
+    customDb.close();
+  });
+
+  it('getDimensions returns configured value', () => {
+    expect(db.getDimensions()).toBe(384);
+  });
+
+  it('dimension mismatch: rebuilds vss table and sets needsReembed', () => {
+    // Create DB with 384 and insert a chunk
+    db.upsertChunk(makeChunk(), makeEmbedding());
+    expect(db.getAllChunks()).toHaveLength(1);
+    db.close();
+
+    // Reopen with different dimensions
+    const db2 = new AnvilDatabase(dbPath, 1536);
+    expect(db2.needsReembed()).toBe(true);
+    expect(db2.getDimensions()).toBe(1536);
+    db2.close();
+
+    // Reassign so afterEach cleanup works
+    db = new AnvilDatabase(dbPath);
+  });
+
+  it('no mismatch when same dimension: needsReembed is false', () => {
+    db.close();
+    const db2 = new AnvilDatabase(dbPath, 384);
+    expect(db2.needsReembed()).toBe(false);
+    db2.close();
+
+    db = new AnvilDatabase(dbPath);
+  });
+
+  it('clearReembedFlag clears the flag', () => {
+    db.close();
+
+    // Trigger mismatch
+    const db2 = new AnvilDatabase(dbPath, 1536);
+    expect(db2.needsReembed()).toBe(true);
+    db2.clearReembedFlag();
+    expect(db2.needsReembed()).toBe(false);
+    db2.close();
+
+    db = new AnvilDatabase(dbPath);
+  });
+
+  it('chunks table is preserved after dimension change', () => {
+    // Insert chunks with original dimensions
+    db.upsertChunk(makeChunk({ chunk_id: 'c1', ordinal: 0 }), makeEmbedding());
+    db.upsertChunk(makeChunk({ chunk_id: 'c2', ordinal: 1 }), makeEmbedding());
+    expect(db.getAllChunks()).toHaveLength(2);
+    db.close();
+
+    // Reopen with different dimensions — chunks table should be preserved
+    const db2 = new AnvilDatabase(dbPath, 1536);
+    const chunks = db2.getAllChunks();
+    expect(chunks).toHaveLength(2);
+    expect(chunks.map(c => c.chunk_id).sort()).toEqual(['c1', 'c2']);
+    db2.close();
+
+    db = new AnvilDatabase(dbPath);
+  });
 });
