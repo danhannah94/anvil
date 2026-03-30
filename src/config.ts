@@ -9,6 +9,7 @@ export interface AnvilConfig {
   embedding: {
     provider: 'local' | 'openai';
     model: string;
+    apiKey?: string;
   };
   chunking: {
     maxChunkSize: number;
@@ -50,7 +51,7 @@ export function validateConfig(raw: Record<string, unknown>): ValidationResult {
   const warnings: string[] = [];
 
   const knownTopKeys = new Set(['docs', 'db', 'embedding', 'chunking', 'watch', 'logLevel']);
-  const knownEmbeddingKeys = new Set(['provider', 'model']);
+  const knownEmbeddingKeys = new Set(['provider', 'model', 'apiKey']);
   const knownChunkingKeys = new Set(['maxChunkSize', 'minChunkSize', 'mergeShort']);
 
   for (const key of Object.keys(raw)) {
@@ -96,6 +97,9 @@ export function validateConfig(raw: Record<string, unknown>): ValidationResult {
       }
       if ('model' in emb && typeof emb.model !== 'string') {
         errors.push(`"embedding.model" must be a string, got ${typeof emb.model}`);
+      }
+      if ('apiKey' in emb && typeof emb.apiKey !== 'string') {
+        errors.push(`"embedding.apiKey" must be a string, got ${typeof emb.apiKey}`);
       }
     }
   }
@@ -199,6 +203,7 @@ export function mergeConfig(
       result.embedding.provider = emb.provider as AnvilConfig['embedding']['provider'];
     }
     if (typeof emb.model === 'string') result.embedding.model = emb.model;
+    if (typeof emb.apiKey === 'string') result.embedding.apiKey = emb.apiKey;
   }
 
   if (typeof fileConfig.chunking === 'object' && fileConfig.chunking !== null) {

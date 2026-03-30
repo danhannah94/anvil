@@ -1,11 +1,11 @@
 import { AnvilDatabase } from './db.js';
-import { Embedder } from './embedder.js';
+import type { EmbeddingProvider } from './embedder.js';
 import { chunkMarkdown } from './chunker.js';
 
 export class Indexer {
   constructor(
     private db: AnvilDatabase,
-    private embedder: Embedder,
+    private embedder: EmbeddingProvider,
   ) {}
 
   async indexFile(
@@ -16,8 +16,8 @@ export class Indexer {
     // Check for model mismatch
     const storedModel = this.db.getMeta('embedding_model');
     const storedDims = this.db.getMeta('embedding_dimensions');
-    const currentModel = this.embedder.getModelName();
-    const currentDims = String(this.embedder.getDimensions());
+    const currentModel = this.embedder.modelName;
+    const currentDims = String(this.embedder.dimensions);
     const modelMismatch =
       storedModel !== null &&
       storedDims !== null &&
@@ -55,7 +55,9 @@ export class Indexer {
     // Embed only changed chunks
     if (toEmbed.length > 0) {
       const texts = toEmbed.map((e) => newChunks[e.index].content);
-      const embeddings = await this.embedder.embedChunks(texts);
+      const embeddings = this.embedder.embedBatch
+        ? await this.embedder.embedBatch(texts)
+        : await Promise.all(texts.map((t) => this.embedder.embed(t)));
 
       for (let j = 0; j < toEmbed.length; j++) {
         const { index, isNew } = toEmbed[j];
