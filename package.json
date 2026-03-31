@@ -1,6 +1,6 @@
 {
   "name": "@claymore-dev/anvil",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "MCP server that makes your project docs searchable by AI — chunks, embeds, and serves markdown over the Model Context Protocol.",
   "type": "module",
   "license": "MIT",
