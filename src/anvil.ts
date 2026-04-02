@@ -59,6 +59,7 @@ export interface Anvil {
   }>;
   getStatus(): Promise<StatusResult>;
   index(options?: { force?: boolean }): Promise<IndexResult>;
+  reindexFiles(files: string[]): Promise<IndexResult>;
   close(): Promise<void>;
 }
 
@@ -213,6 +214,54 @@ export async function createAnvil(config: AnvilConfig): Promise<Anvil> {
 
       return {
         files_processed: mdFiles.length,
+        chunks_added: totalAdded,
+        chunks_updated: totalUpdated,
+        chunks_unchanged: totalUnchanged,
+        chunks_deleted: totalRemoved,
+        duration_ms: Date.now() - start,
+      };
+    },
+
+    async reindexFiles(files: string[]): Promise<IndexResult> {
+      const start = Date.now();
+      let totalAdded = 0;
+      let totalUpdated = 0;
+      let totalUnchanged = 0;
+      let totalRemoved = 0;
+
+      for (const rel of files) {
+        const absPath = join(docsPath, rel);
+
+        try {
+          const fileStat = await stat(absPath);
+          if (!fileStat.isFile()) continue;
+
+          const content = await readFile(absPath, "utf-8");
+          const result = await indexer.indexFile(
+            rel,
+            content,
+            fileStat.mtime.toISOString(),
+          );
+          totalAdded += result.added;
+          totalUpdated += result.updated;
+          totalUnchanged += result.unchanged;
+          totalRemoved += result.removed;
+        } catch (err) {
+          // File doesn't exist on disk — it was deleted
+          if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+            const existingChunks = db.getChunksByFile(rel);
+            if (existingChunks.length > 0) {
+              totalRemoved += existingChunks.length;
+              indexer.removeFile(rel);
+            }
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      return {
+        files_processed: files.length,
         chunks_added: totalAdded,
         chunks_updated: totalUpdated,
         chunks_unchanged: totalUnchanged,
