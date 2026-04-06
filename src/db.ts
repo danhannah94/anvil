@@ -192,8 +192,8 @@ export class AnvilDatabase {
 
   getChunksByHeadingPrefix(filePath: string, headingPrefix: string): Chunk[] {
     return this.db.prepare(
-      'SELECT chunk_id, file_path, heading_path, heading_level, content, content_hash, last_modified, char_count, ordinal FROM chunks WHERE file_path = ? AND (heading_path = ? OR heading_path LIKE ?) ORDER BY ordinal'
-    ).all(filePath, headingPrefix, `${headingPrefix} [part %`) as Chunk[];
+      'SELECT chunk_id, file_path, heading_path, heading_level, content, content_hash, last_modified, char_count, ordinal FROM chunks WHERE file_path = ? AND (heading_path = ? OR heading_path LIKE ? OR heading_path LIKE ?) ORDER BY ordinal'
+    ).all(filePath, headingPrefix, `${headingPrefix} [part %`, `${headingPrefix} > %`) as Chunk[];
   }
 
   close(): void {
