@@ -20,6 +20,9 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
+      - name: Update npm (pinned to npm 10.x for OIDC trusted publishing)
+        run: npm install -g npm@10
+
       - run: npm ci
 
       - run: npm run build
