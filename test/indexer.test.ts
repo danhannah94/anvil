@@ -120,6 +120,57 @@ describe('Indexer', () => {
     expect(stats.added).toBeGreaterThan(0);
   });
 
+  it('inserting a section in the middle re-syncs ordinals of unchanged chunks', async () => {
+    // Regression for bug where unchanged chunks kept their stale ordinal
+    // when a new section was inserted earlier in the document, causing
+    // ORDER BY ordinal queries to return chunks in wrong document order.
+    const FILLER_MIDDLE = 'This is a brand new MIDDLE section that did not exist in the original document. We need enough text here to exceed the minimum chunk size threshold of two hundred characters so the chunker does not merge this section.';
+    const MD_WITH_MIDDLE = `# Title
+
+Some intro text here that is long enough to not be merged. This paragraph provides introductory context for the entire document and exceeds two hundred characters comfortably so it stands alone as its own chunk in the system.
+
+## Section A
+
+${FILLER_A}
+
+## MIDDLE
+
+${FILLER_MIDDLE}
+
+## Section B
+
+${FILLER_B}
+`;
+
+    // V1 has Section A and Section B. After indexing, capture their ordinals.
+    await indexer.indexFile('test.md', MD_V1, '2024-01-01');
+    const v1Chunks = db.getChunksByFile('test.md');
+    const v1ByPath = new Map(v1Chunks.map((c) => [c.heading_path, c]));
+    const sectionAv1 = v1ByPath.get('Title > Section A');
+    const sectionBv1 = v1ByPath.get('Title > Section B');
+    expect(sectionAv1).toBeDefined();
+    expect(sectionBv1).toBeDefined();
+    expect(sectionAv1!.ordinal).toBeLessThan(sectionBv1!.ordinal);
+
+    // Now insert MIDDLE between A and B. Re-index.
+    const stats = await indexer.indexFile('test.md', MD_WITH_MIDDLE, '2024-01-02');
+    expect(stats.added).toBe(1); // just the new MIDDLE chunk
+
+    // After re-indexing, Section B's ordinal must have shifted forward to
+    // make room for MIDDLE. The expected document order is:
+    //   Title intro, Section A, MIDDLE, Section B
+    const v2Chunks = db.getChunksByFile('test.md'); // ORDER BY ordinal
+    const orderedHeadings = v2Chunks.map((c) => c.heading_path);
+    const aIdx = orderedHeadings.indexOf('Title > Section A');
+    const middleIdx = orderedHeadings.indexOf('Title > MIDDLE');
+    const bIdx = orderedHeadings.indexOf('Title > Section B');
+    expect(aIdx).toBeGreaterThanOrEqual(0);
+    expect(middleIdx).toBeGreaterThanOrEqual(0);
+    expect(bIdx).toBeGreaterThanOrEqual(0);
+    expect(aIdx).toBeLessThan(middleIdx);
+    expect(middleIdx).toBeLessThan(bIdx);
+  });
+
   it('model mismatch triggers full re-embed', async () => {
     await indexer.indexFile('test.md', MD_V1, '2024-01-01');
     // Simulate model mismatch

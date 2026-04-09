@@ -12,7 +12,7 @@ export class Indexer {
     filePath: string,
     content: string,
     lastModified: string,
-  ): Promise<{ added: number; updated: number; unchanged: number; removed: number }> {
+  ): Promise<{ added: number; updated: number; unchanged: number; reordered: number; removed: number }> {
     // Check for model mismatch
     const storedModel = this.db.getMeta('embedding_model');
     const storedDims = this.db.getMeta('embedding_dimensions');
@@ -31,21 +31,35 @@ export class Indexer {
 
     const newChunks = chunkMarkdown(content, filePath, lastModified);
     const existing = this.db.getChunksByFile(filePath);
-    const existingMap = new Map(existing.map((c) => [c.chunk_id, c.content_hash]));
+    // Track both content_hash and ordinal so we can detect chunks whose
+    // content didn't change but whose document position shifted (e.g. when
+    // a new section was inserted earlier in the file). Without re-syncing
+    // the ordinal, ORDER BY ordinal queries return chunks in stale order.
+    const existingMap = new Map(
+      existing.map((c) => [c.chunk_id, { hash: c.content_hash, ordinal: c.ordinal }]),
+    );
     const newChunkIds = new Set(newChunks.map((c) => c.chunk_id));
 
     let added = 0;
     let updated = 0;
     let unchanged = 0;
+    let reordered = 0;
 
     const toEmbed: { index: number; isNew: boolean }[] = [];
 
     for (let i = 0; i < newChunks.length; i++) {
       const chunk = newChunks[i];
-      const existingHash = existingMap.get(chunk.chunk_id);
-      if (existingHash !== undefined && existingHash === chunk.content_hash && !modelMismatch) {
+      const existingEntry = existingMap.get(chunk.chunk_id);
+      if (existingEntry !== undefined && existingEntry.hash === chunk.content_hash && !modelMismatch) {
+        // Content unchanged — but if the document position shifted, we still
+        // need to update the ordinal so queries return chunks in current
+        // document order. No re-embedding required.
+        if (existingEntry.ordinal !== chunk.ordinal) {
+          this.db.updateChunkOrdinal(chunk.chunk_id, chunk.ordinal);
+          reordered++;
+        }
         unchanged++;
-      } else if (existingHash !== undefined) {
+      } else if (existingEntry !== undefined) {
         toEmbed.push({ index: i, isNew: false });
       } else {
         toEmbed.push({ index: i, isNew: true });
@@ -81,7 +95,7 @@ export class Indexer {
     this.db.setMeta('embedding_dimensions', currentDims);
     this.db.setMeta('last_index_timestamp', new Date().toISOString());
 
-    return { added, updated, unchanged, removed };
+    return { added, updated, unchanged, reordered, removed };
   }
 
   removeFile(filePath: string): void {
