@@ -37,6 +37,12 @@ export interface IndexResult {
   chunks_added: number;
   chunks_updated: number;
   chunks_unchanged: number;
+  /**
+   * Chunks whose content was unchanged but whose ordinal was re-synced
+   * because their document position shifted (e.g. a new section was
+   * inserted earlier in the file). Avoids re-embedding.
+   */
+  chunks_reordered: number;
   chunks_deleted: number;
   duration_ms: number;
 }
@@ -178,6 +184,7 @@ export async function createAnvil(config: AnvilConfig): Promise<Anvil> {
       let totalUpdated = 0;
       let totalUnchanged = 0;
       let totalRemoved = 0;
+      let totalReordered = 0;
 
       for (const rel of mdFiles) {
         const absPath = join(docsPath, rel);
@@ -197,6 +204,7 @@ export async function createAnvil(config: AnvilConfig): Promise<Anvil> {
         totalAdded += result.added;
         totalUpdated += result.updated;
         totalUnchanged += result.unchanged;
+        totalReordered += result.reordered;
         totalRemoved += result.removed;
       }
 
@@ -217,6 +225,7 @@ export async function createAnvil(config: AnvilConfig): Promise<Anvil> {
         chunks_added: totalAdded,
         chunks_updated: totalUpdated,
         chunks_unchanged: totalUnchanged,
+        chunks_reordered: totalReordered,
         chunks_deleted: totalRemoved,
         duration_ms: Date.now() - start,
       };
@@ -227,6 +236,7 @@ export async function createAnvil(config: AnvilConfig): Promise<Anvil> {
       let totalAdded = 0;
       let totalUpdated = 0;
       let totalUnchanged = 0;
+      let totalReordered = 0;
       let totalRemoved = 0;
 
       for (const rel of files) {
@@ -245,6 +255,7 @@ export async function createAnvil(config: AnvilConfig): Promise<Anvil> {
           totalAdded += result.added;
           totalUpdated += result.updated;
           totalUnchanged += result.unchanged;
+          totalReordered += result.reordered;
           totalRemoved += result.removed;
         } catch (err) {
           // File doesn't exist on disk — it was deleted
@@ -265,6 +276,7 @@ export async function createAnvil(config: AnvilConfig): Promise<Anvil> {
         chunks_added: totalAdded,
         chunks_updated: totalUpdated,
         chunks_unchanged: totalUnchanged,
+        chunks_reordered: totalReordered,
         chunks_deleted: totalRemoved,
         duration_ms: Date.now() - start,
       };

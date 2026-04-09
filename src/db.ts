@@ -131,6 +131,17 @@ export class AnvilDatabase {
     txn();
   }
 
+  /**
+   * Update only the ordinal of an existing chunk. Used when a chunk's
+   * content is unchanged but its document position has shifted (e.g. a
+   * new section was inserted earlier in the file). Avoids re-embedding.
+   */
+  updateChunkOrdinal(chunkId: string, ordinal: number): void {
+    this.db
+      .prepare('UPDATE chunks SET ordinal = ? WHERE chunk_id = ?')
+      .run(ordinal, chunkId);
+  }
+
   deleteChunk(chunkId: string): void {
     const txn = this.db.transaction(() => {
       const row = this.db.prepare('SELECT id FROM chunks WHERE chunk_id = ?').get(chunkId) as { id: number } | undefined;
